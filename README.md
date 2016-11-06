@@ -5,9 +5,9 @@ This repository will contain an ensemble of services monitoring and logging info
 disk_stats is a service logging the use of physical disks and the size of specific folders.
 
 ## Dependancies
-*python 3 (developed and tested with python 3.5)
-*peewee
-*psutil
+* python 3 (developed and tested with python 3.5)
+* peewee
+* psutil
 
 ## License
 This work is licensed under [Creative Commons Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/legalcode)
