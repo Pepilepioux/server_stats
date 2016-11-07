@@ -4,7 +4,7 @@ import logging
 
 #-------------- Logging settings --------------
 LOGGING_LEVEL = logging.INFO
-LOG_FILE_PATH = os.path.join('/', 'var', 'log')
+LOG_FILE_PATH = os.path.join('/', 'var', 'log', 'disk_stats.log')
 
 #-------------- Database settings --------------
 DATABASE_PATH = None
