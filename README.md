@@ -6,6 +6,7 @@ disk_stats is a service logging the use of physical disks and the size of specif
 
 Before using it, a few settings must be changed :
 * DATABASE_PATH must be a path to the sqlite3 database file to use. If the file does not exist, it will be created.
+
 To enable the emails :
 * SEND_ALERTS must be set to True if you wish to receive disk usage alerts
 * SEND_REPORTS must be set to True if you wish to receive the reports
