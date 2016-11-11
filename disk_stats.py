@@ -4,11 +4,15 @@ import os
 import datetime
 import logging
 import logging.handlers
+import pickle
+import gipkomail
 # Settings
 import disk_stats_settings as dss
+from collections import namedtuple
 
 #================ Database info ================
 db = peewee.SqliteDatabase(dss.DATABASE_PATH)
+db.connect()
 
 #================ Logging settings ================
 logger = logging.getLogger()
@@ -19,7 +23,13 @@ file_handler.setFormatter(formatter)
 file_handler.setLevel(dss.LOGGING_LEVEL)
 logger.addHandler(file_handler)
 
+#================ Other settings ================
 date_now = datetime.datetime.now()
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+DISK_REPORT_SEPARATOR = "+"+"-"*20+"+"+"-"*40+"+"+"-"*10+"+"+"-"*10+"+"
+DISK_REPORT_STRING = "|{device: <20}|{mount_point: <40}|{used_space: >10}|{size: >10}|"
+FOLDER_REPORT_SEPARATOR = "+"+"-"*60+"+"+"-"*10+"+"
+FOLDER_REPORT_STRING = "|{folder: <60}|{size: >10}|"
 
 #================ ORM classes ================
 class FileSystem(peewee.Model):
@@ -107,6 +117,7 @@ class FolderSizeHistory(peewee.Model):
         database = db
         db_table = 'server_stats_foldersizehistory'
 
+Report = namedtuple('Report', ('data', 'errors'))
 
 #================ Tool functions ================
 def folder_stats(path, parent=None):
@@ -144,54 +155,178 @@ def folder_stats(path, parent=None):
     file_folder.save()
     return path_size
 
+SIZE_UNITS = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z']
+def sizeof_fmt(size, suffix="o"):
+    """Formats a file size to be readable by a bipede
+
+    Arguments:
+        size: The size to format, in bytes
+        suffix: The unit suffix
+    Returns:
+        str
+    """
+    result = "{0}{1}".format(size, suffix)
+    for unit in SIZE_UNITS:
+        result = '{size:3.1f}{unit}{suffix}'.format(size=size, unit=unit,
+                                                  suffix=suffix)
+        if abs(size) < 1024:
+            return result
+        size /= 1024
+    return result
+
+def send_reports(disks_report, folders_report):
+    reports_dict = {}
+    reports_dict_file = os.path.join(BASE_DIR, 'reports_info.pkl')
+    # Load reports dict
+    try:
+        with open(reports_dict_file, 'rb') as f:
+            reports_dict = pickle.load(f)
+    except FileNotFoundError:
+        pass
+    # Alerts
+    if dss.SEND_ALERTS:
+        alerts_lines = []
+        devices_on_alert = []
+        for disk in disks_report.data:
+            use_percentage = 100*disk.used_space/disk.size
+            # Get the date of the last alert sent, if no report were sent, make
+            # it so we send one this time
+            date_last_alert = reports_dict.get(disk.file_system.name,
+                                               date_now-2*dss.ALERTS_INTERVAL)
+            can_send = date_now-date_last_alert >= dss.ALERTS_INTERVAL
+            if use_percentage >= dss.USED_PERCENTAGE_FOR_ALERT and can_send:
+                devices_on_alert.append(disk.file_system.name)
+                alerts_lines.append(dss.DISK_ALERT_STRING.format(device=disk.file_system.name,
+                                                                  mount_point=disk.mount_point.path,
+                                                                  use_percentage=int(use_percentage)))
+        if alerts_lines:
+            text = "\n".join(alerts_lines)
+            try:
+                gipkomail.EnvoyerMessage(dss.EMAIL_SERVER, dss.EMAIL_FROM,
+                                         dss.EMAIL_TO, dss.DISK_ALERT_SUBJECT,
+                                         text, dss.EMAIL_USER_NAME,
+                                         dss.EMAIL_PASSWORD)
+            except Exception as e:
+                logger.error("Failed to send alert mail : {e}".format(e=e))
+        # Update reports dictionary
+        for device in devices_on_alert:
+            reports_dict[device] = date_now
+    # Report
+    date_last_report = reports_dict.get("report", date_now-2*dss.REPORTS_INTERVAL)
+    can_send_report = date_now-date_last_report > dss.REPORTS_INTERVAL
+    if dss.SEND_REPORTS and can_send_report:
+        reports_lines = []
+        # Disks report
+        if disks_report.data:
+            # Table header
+            reports_lines.append(DISK_REPORT_SEPARATOR)
+            reports_lines.append(DISK_REPORT_STRING.format(device="device",
+                                                           mount_point="mount point",
+                                                           used_space="used space",
+                                                           size="size"))
+            reports_lines.append(DISK_REPORT_SEPARATOR)
+            for disk in disks_report.data:
+                reports_lines.append(DISK_REPORT_STRING.format(device=disk.file_system.name,
+                                                              mount_point=disk.mount_point.path,
+                                                              used_space=sizeof_fmt(disk.used_space),
+                                                              size=sizeof_fmt(disk.size)))
+            # Table footer and vertical space
+            reports_lines.append(DISK_REPORT_SEPARATOR)
+            reports_lines.append("")
+        if disks_report.errors:
+            reports_lines.append(dss.DISK_REPORT_ERROR_STRING.format(error=disks_report.errors[0]))
+            reports_lines.append("")
+        # Folders report
+        if folders_report.data:
+            # Table header
+            reports_lines.append(FOLDER_REPORT_SEPARATOR)
+            reports_lines.append(FOLDER_REPORT_STRING.format(folder="folder",
+                                                             size="size"))
+            reports_lines.append(FOLDER_REPORT_SEPARATOR)
+            for folder in folders_report.data:
+                reports_lines.append(FOLDER_REPORT_STRING.format(folder=folder.path,
+                                                                 size=sizeof_fmt(folder.size)))
+            # Table footer and vertical space
+            reports_lines.append(FOLDER_REPORT_SEPARATOR)
+            reports_lines.append("")
+        if folders_report.errors:
+            reports_lines.append(dss.FOLDER_REPORT_ERRROR_STRING.format(error=folders_report.errors[0]))
+            reports_lines.append("")
+        # Send report
+        if reports_lines:
+            # Update reports dictionary
+            reports_dict["report"] = date_now
+            text = "\n".join(reports_lines)
+            try:
+                gipkomail.EnvoyerMessage(dss.EMAIL_SERVER, dss.EMAIL_FROM,
+                                         dss.EMAIL_TO, dss.REPORT_SUBJECT,
+                                         text, dss.EMAIL_USER_NAME,
+                                         dss.EMAIL_PASSWORD)
+            except Exception as e:
+                logger.error("Failed to send report mail : {e}".format(e=e))
+    # Save reports dict
+    try:
+        with open(reports_dict_file, 'wb') as f:
+            pickle.dump(reports_dict, f)
+    except Exception as e:
+        logger.error("Failed to save reports dictionary : {e}".format(e=e))
+
 #================ Main functions ================
 def folders_stats():
     logger.info("Starting folders_stats")
-    # Create tables if necessary
-    FolderSize.create_table(fail_silently=True)
-    FolderSizeHistory.create_table(fail_silently=True)
-    # Use db.atomic for performances
-    with db.atomic():
-        for path in dss.WATCHED_PATH:
-            size = folder_stats(path)
-            # Create history for the base directory
-            folder_size = FolderSizeHistory.create(path=path, size=size,
-                                                   date=date_now)
-            folder_size.save()
-    logger.info("folders_stats ending")
+    folders_report = Report(data=[], errors=[])
+    try:
+        # Create tables if necessary
+        FolderSize.create_table(fail_silently=True)
+        FolderSizeHistory.create_table(fail_silently=True)
+        # Use db.atomic for performances
+        with db.atomic():
+            for path in dss.WATCHED_PATH:
+                size = folder_stats(path)
+                # Create history for the base directory
+                folder_size = FolderSizeHistory.create(path=path, size=size,
+                                                       date=date_now)
+                folder_size.save()
+                folders_report.data.append(folder_size)
+        logger.info("folders_stats ending")
+    except Exception as e:
+        logger.error("Failed to execute disk_stats : {0} ({1})".format(e, e.__class__))
+        folders_report.errors.append(e)
+    return folders_report
 
 def disk_stats():
     """Reads disk stats and saves them in the database with a timestamp
     """
     logger.info("Starting disk_stats")
-    db.connect()
-    # Create tables if necessary
-    FileSystem.create_table(fail_silently=True)
-    MountPoint.create_table(fail_silently=True)
-    DataPoint.create_table(fail_silently=True)
-    # Main process
-    partitions = psutil.disk_partitions(all=dss.ANALYSE_ALL_PARTITIONS)
-    for partition in partitions:
-        if partition.device not in dss.EXCLUDED_DEVICES:
-            disk_info = psutil.disk_usage(partition.mountpoint)
-            file_system = FileSystem.create_or_get(name=partition.device)[0]
-            mount_point = MountPoint.create_or_get(path=partition.mountpoint)[0]
-            file_system.save()
-            mount_point.save()
-            data_point = DataPoint.create(size=disk_info.total,
-                                          used_space=disk_info.used,
-                                          file_system=file_system,
-                                          mount_point=mount_point,
-                                          date=date_now)
-            data_point.save()
-    logger.info("disk_stats ended")
-
-if __name__ == "__main__":
+    disks_report = Report(data=[], errors=[])
     try:
-        disk_stats()
-    except Exception as e:
-        logger.error("Failed to execute disk_stats : {0} ({1})".format(e, e.__class__))
-    try:
-        folders_stats()
+        # Create tables if necessary
+        FileSystem.create_table(fail_silently=True)
+        MountPoint.create_table(fail_silently=True)
+        DataPoint.create_table(fail_silently=True)
+        # Main process
+        partitions = psutil.disk_partitions(all=dss.ANALYSE_ALL_PARTITIONS)
+        for partition in partitions:
+            if partition.device not in dss.EXCLUDED_DEVICES:
+                disk_info = psutil.disk_usage(partition.mountpoint)
+                file_system = FileSystem.create_or_get(name=partition.device)[0]
+                mount_point = MountPoint.create_or_get(path=partition.mountpoint)[0]
+                file_system.save()
+                mount_point.save()
+                data_point = DataPoint.create(size=disk_info.total,
+                                              used_space=disk_info.used,
+                                              file_system=file_system,
+                                              mount_point=mount_point,
+                                              date=date_now)
+                data_point.save()
+                disks_report.data.append(data_point)
+        logger.info("disk_stats ended")
     except Exception as e:
         logger.error("Failed to execute folders_stats : {0} ({1})".format(e, e.__class__))
+        disks_report.errors.append(e)
+    return disks_report
+
+if __name__ == "__main__":
+    disks_report = disk_stats()
+    folders_report = folders_stats()
+    send_reports(disks_report, folders_report)
