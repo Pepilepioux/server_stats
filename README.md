@@ -27,3 +27,4 @@ You may use it as you want as long as it is not for commercial purposes.
 
 # Authors
 * Thomas Coeffic (Eusmilis)
+* JP Coeffic for gipkomail
