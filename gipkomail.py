@@ -3,18 +3,22 @@
 """
 Version 2 2016-12-12
 
-Envoie un mail, plain text ou html, avec ou sans pièces jointes, avec ou sans cc et bcc,
-avec un minimum de vérifications : existence des fichiers en PJ, types des arguments, etc.
+    Envoie un mail, plain text ou html, avec ou sans pièces jointes, avec ou sans cc et bcc,
+    avec un minimum de vérifications : existence des fichiers en PJ, types des arguments, etc.
 
-Par contre il n'y a pas de vérification structurelle des adresses.
-Pour le jour où les noms de domaine pourront être en chinois...
+    Par contre il n'y a pas de vérification structurelle des adresses.
+    Pour le jour où les noms de domaine pourront être en chinois...
 
-Inspiré de http://stackoverflow.com/questions/882712/sending-html-email-using-python pour le html et
-http://stackoverflow.com/questions/3362600/how-to-send-email-attachments-with-python pour les attachements.
+    Inspiré de http://stackoverflow.com/questions/882712/sending-html-email-using-python pour le html et
+    http://stackoverflow.com/questions/3362600/how-to-send-email-attachments-with-python pour les attachements.
 
-Petit bug remarqué : s'il y a un texte ET un html les DEUX s'affichent dans le message reçu.
-C'est ça ou, si on fait un MIMEMultipart('alternative'), on ne voit pas les PJ...
-Je préfère ça à une censure qui supprimerait arbitrairement l'un des deux.
+    Petit bug remarqué : s'il y a un texte ET un html les DEUX s'affichent dans le message reçu.
+    C'est ça ou, si on fait un MIMEMultipart('alternative'), on ne voit pas les PJ...
+    Je préfère ça à une censure qui supprimerait arbitrairement l'un des deux.
+
+Version 2.1 2017-10-19
+
+    Accepte le port en paramètre optionnel.
 
 """
 import os
@@ -60,7 +64,7 @@ def verif_adresses(adresses):
 
 #   ------------------------------------------------------------------------------------------------------------------
 def envoyer_message(serveur, sender, to, subject, contenu_texte=None, smtp_user=None, smtp_pwd=None,
-                    contenu_html=None, cc=None, bcc=None, files=None):
+                    contenu_html=None, cc=None, bcc=None, files=None, port=None):
     #   1 - quelques vérifications
     #       Le serveur DOIT être un str...
     if type(serveur).__name__ != 'str':
@@ -85,6 +89,10 @@ def envoyer_message(serveur, sender, to, subject, contenu_texte=None, smtp_user=
     #       S'il est spécifié, le smtp_user doit lui aussi être un str
     if smtp_user is not None and type(smtp_user).__name__ != 'str':
         raise ValueError('Paramètre "smtp_user" incorrect. Doit être une chaine de caractères')
+
+    #       S'il est spécifié, le port doir être un entier
+    if port is not None and type(port).__name__ != 'int':
+        raise ValueError('Paramètre "port" incorrect. Doit être un entier')
 
     #   L'argument "files" doit être une liste de str
     if files is not None and type(files).__name__ != 'list':
@@ -147,7 +155,10 @@ def envoyer_message(serveur, sender, to, subject, contenu_texte=None, smtp_user=
     if liste_bcc:
         addr_to += liste_bcc
 
-    s = smtplib.SMTP(serveur)
+    if port is None:
+        s = smtplib.SMTP(serveur)
+    else:
+        s = smtplib.SMTP(serveur, port)
 
     if smtp_user is not None:
         if smtp_pwd is None:
