@@ -20,6 +20,10 @@ Version 2.1 2017-10-19
 
     Accepte le port en paramètre optionnel.
 
+Version 2.2 2020-01-18
+
+    Ajouté le "main" : si exécuté directement, demande tous les arguments et envoie le message (pour tests)
+
 """
 import os
 import smtplib
@@ -186,3 +190,43 @@ def EnvoyerMessage(serveur, sender, destinataire, subject, contenuTexte, smtp_us
                     smtp_pwd=smtp_pwd, contenu_html=contenuHTML, cc=listeCopies, bcc=listeBCC, files=files)
 
 #   ------------------------------------------------------------------------------------------------------------------
+
+if __name__ == '__main__':
+    serveur = input('Serveur ?\n')
+    sender = input('sender ?\n')
+    to = input('to ?\n')
+    subject = input('subject ?\n')
+
+    contenu_texte = input('contenu_texte ?\n')
+    if contenu_texte == '':
+        contenu_texte = None
+
+    smtp_user = input('smtp_user ?\n')
+    if smtp_user == '':
+        smtp_user = None
+
+    smtp_pwd = input('smtp_pwd ?\n')
+    if smtp_pwd == '':
+        smtp_pwd = None
+
+    contenu_html = input('contenu_html ?\n')
+    if contenu_html == '':
+        contenu_html = None
+
+    cc = input('cc ?\n')
+    if cc == '':
+        cc = None
+
+    bcc = input('bcc ?\n')
+    if bcc == '':
+        bcc = None
+
+    files = input('files ?\n')
+    if files == '':
+        files = None
+
+    port = input('port ?\n')
+    if port == '':
+        port = None
+
+    envoyer_message(serveur, sender, to, subject, contenu_texte, smtp_user, smtp_pwd, contenu_html, cc, bcc, files, port)
