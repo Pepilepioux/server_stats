@@ -24,6 +24,10 @@ Version 2.2 2020-01-18
 
     Ajouté le "main" : si exécuté directement, demande tous les arguments et envoie le message (pour tests)
 
+Version 2.3 2020-09-20
+
+    La fonction envoyer_message retourne le retour de la fonction smtp.sendmail.
+
 """
 import os
 import smtplib
@@ -177,6 +181,7 @@ def envoyer_message(serveur, sender, to, subject, contenu_texte=None, smtp_user=
 
     rep = s.sendmail(addr_from, addr_to, msg.as_string())
     s.quit()
+    return rep
 
 
 #   ------------------------------------------------------------------------------------------------------------------
